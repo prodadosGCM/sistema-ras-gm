@@ -469,10 +469,14 @@ else:
             val = c6.number_input("Valor (R$)", 0.0, 1000.0, 200.0)
 
             if st.button("Publicar"):
-                dt_str = dt.strftime("%Y-%m-%d")
-                hi_str = hi.strftime("%H:%M:%S")
-                hf_str = hf.strftime("%H:%M:%S")
-                liberacao_str = datetime.combine(dt, hora_liberacao).strftime("%Y-%m-%d %H:%M:%S")
+                dt_str = str(dt)
+                hi_str = str(hi)
+                hf_str = str(hf)
+
+                if hora_liberacao:
+                    liberacao_str = f"{dt} {hora_liberacao}"
+                else:
+                    liberacao_str = None
 
                 conn = get_connection()
                 conn.execute("""
