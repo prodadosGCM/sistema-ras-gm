@@ -603,11 +603,14 @@ else:
                 # ⏱ CONTROLE DE LIBERAÇÃO
                 agora = datetime.now()
 
-                if row['liberacao'] is None:
-                    liberado = True
-                else:
+                liberado = True
+                tempo_restante = None
+
+                if row['liberacao'] is not None:
                     liberacao = pd.to_datetime(row['liberacao'])
-                    liberado = agora >= liberacao
+                    if agora < liberacao:
+                        liberado = False
+                        tempo_restante = liberacao - agora
 
 
                 with st.container(border=True):
@@ -617,13 +620,19 @@ else:
                         st.write(f"📅 {row['data_inicio']} | 🕒 {row['hora_inicio']} - {row['hora_fim']}")
                         st.write(f"💰 R$ {row['valor']:.2f}")
                     with c2:
-                        if not liberado and row['liberacao'] is not None:
-                            delta = liberacao - agora
-                            segundos = max(0, int(delta.total_seconds()))
-                            horas, resto = divmod(segundos, 3600)
-                            minutos, segundos = divmod(resto, 60)
-                            st.info(f"⏱ Liberação em {horas:02d}:{minutos:02d}:{segundos:02d}")
+                        contador = st.empty()
 
+                        if not liberado and tempo_restante:
+                            total_seg = int(tempo_restante.total_seconds())
+                            horas, resto = divmod(total_seg, 3600)
+                            minutos, segundos = divmod(resto, 60)
+
+                            contador.info(
+                                f"⏱ Inscrições liberadas em {horas:02d}:{minutos:02d}:{segundos:02d}"
+                            )
+
+                            time.sleep(1)
+                            st.rerun()
 
                         st.write(f"Ocupação: {row['inscritos']}/{row['vagas_totais']}")
                         st.progress(pct)
