@@ -178,15 +178,30 @@ def alterar_senha(tipo_usuario, id_usuario, nova_senha):
     conn.commit()
     conn.close()
 
-def criar_vaga(evento, data, h_inicio, h_fim, qtd, valor, liberacao):
+def criar_vaga(evt, dt, hi, hf, qtd, val, liberacao):
     conn = get_connection()
+
+    # 🔒 CONVERSÃO SEGURA PARA SQLITE
+    if liberacao is not None:
+        liberacao = pd.to_datetime(liberacao).strftime("%Y-%m-%d %H:%M:%S")
+
     conn.execute("""
-        INSERT INTO vagas_ras 
+        INSERT INTO vagas_ras
         (evento, data_inicio, hora_inicio, hora_fim, vagas_totais, valor, liberacao)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (evento, data, str(h_inicio), str(h_fim), qtd, valor, liberacao))
+    """, (
+        evt,
+        str(dt),
+        str(hi),
+        str(hf),
+        int(qtd),
+        float(val),
+        liberacao
+    ))
+
     conn.commit()
     conn.close()
+
 
 
 def inscrever_ras(id_agente, id_vaga):
