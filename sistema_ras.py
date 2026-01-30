@@ -597,9 +597,6 @@ else:
             if vagas_df.empty: st.info("Sem vagas no momento.")
             
             for index, row in vagas_df.iterrows():
-                vagas_restantes = row['vagas_totais'] - row['inscritos']
-                pct = row['inscritos'] / row['vagas_totais'] if row['vagas_totais'] > 0 else 0
-                
                 # ⏱ CONTROLE DE LIBERAÇÃO
                 agora = datetime.now()
 
@@ -612,6 +609,11 @@ else:
                         liberado = False
                         tempo_restante = liberacao - agora
 
+
+                vagas_restantes = row['vagas_totais'] - row['inscritos']
+                pct = row['inscritos'] / row['vagas_totais'] if row['vagas_totais'] > 0 else 0
+                
+                
 
                 with st.container(border=True):
                     c1, c2, c3 = st.columns([3, 2, 1])
