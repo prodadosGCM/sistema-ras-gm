@@ -178,12 +178,16 @@ def alterar_senha(tipo_usuario, id_usuario, nova_senha):
     conn.commit()
     conn.close()
 
-def criar_vaga(evento, data, h_inicio, h_fim, qtd, valor):
+def criar_vaga(evento, data, h_inicio, h_fim, qtd, valor, liberacao):
     conn = get_connection()
-    conn.execute("INSERT INTO vagas_ras (evento, data_inicio, hora_inicio, hora_fim, vagas_totais, valor) VALUES (?, ?, ?, ?, ?, ?)",
-                 (evento, data, str(h_inicio), str(h_fim), qtd, valor))
+    conn.execute("""
+        INSERT INTO vagas_ras 
+        (evento, data_inicio, hora_inicio, hora_fim, vagas_totais, valor, liberacao)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (evento, data, str(h_inicio), str(h_fim), qtd, valor, liberacao))
     conn.commit()
     conn.close()
+
 
 def inscrever_ras(id_agente, id_vaga):
     conn = get_connection()
@@ -578,8 +582,12 @@ else:
                 
                 # ⏱ CONTROLE DE LIBERAÇÃO
                 agora = datetime.now()
-                liberacao = pd.to_datetime(row['liberacao'])
-                liberado = agora >= liberacao
+
+                if row['liberacao'] is None:
+                    liberado = True
+                else:
+                    liberacao = pd.to_datetime(row['liberacao'])
+                    liberado = agora >= liberacao
 
 
                 with st.container(border=True):
@@ -589,11 +597,13 @@ else:
                         st.write(f"📅 {row['data_inicio']} | 🕒 {row['hora_inicio']} - {row['hora_fim']}")
                         st.write(f"💰 R$ {row['valor']:.2f}")
                     with c2:
-                        if not liberado:
+                        if not liberado and row['liberacao'] is not None:
                             delta = liberacao - agora
-                            horas, resto = divmod(int(delta.total_seconds()), 3600)
+                            segundos = max(0, int(delta.total_seconds()))
+                            horas, resto = divmod(segundos, 3600)
                             minutos, segundos = divmod(resto, 60)
                             st.info(f"⏱ Liberação em {horas:02d}:{minutos:02d}:{segundos:02d}")
+
 
                         st.write(f"Ocupação: {row['inscritos']}/{row['vagas_totais']}")
                         st.progress(pct)
