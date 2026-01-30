@@ -469,16 +469,23 @@ else:
             val = c6.number_input("Valor (R$)", 0.0, 1000.0, 200.0)
 
             if st.button("Publicar"):
-                liberacao = f"{dt} {hora_liberacao}"
+                dt_str = dt.strftime("%Y-%m-%d")
+                hi_str = hi.strftime("%H:%M:%S")
+                hf_str = hf.strftime("%H:%M:%S")
+                liberacao_str = datetime.combine(dt, hora_liberacao).strftime("%Y-%m-%d %H:%M:%S")
+
                 conn = get_connection()
                 conn.execute("""
                     INSERT INTO vagas_ras 
                     (evento, data_inicio, hora_inicio, hora_fim, vagas_totais, valor, liberacao)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (evt, dt, hi, hf, qtd, val, liberacao))
+                """, (evt, dt_str, hi_str, hf_str, qtd, val, liberacao_str))
                 conn.commit()
                 conn.close()
+
                 st.success("Escala criada com horário de liberação!")
+
+
 
 
         elif op == "Gerenciar Agentes":
