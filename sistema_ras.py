@@ -181,23 +181,17 @@ def alterar_senha(tipo_usuario, id_usuario, nova_senha):
 def criar_vaga(evt, dt, hi, hf, qtd, val, liberacao):
     conn = get_connection()
 
-    # 🔒 CONVERSÃO SEGURA PARA SQLITE
-    if liberacao is not None:
-        liberacao = pd.to_datetime(liberacao).strftime("%Y-%m-%d %H:%M:%S")
+    # Defesa extra (caso algo escape)
+    dt = str(dt)
+    hi = str(hi)
+    hf = str(hf)
+    liberacao = str(liberacao) if liberacao else None
 
     conn.execute("""
         INSERT INTO vagas_ras
         (evento, data_inicio, hora_inicio, hora_fim, vagas_totais, valor, liberacao)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (
-        evt,
-        str(dt),
-        str(hi),
-        str(hf),
-        int(qtd),
-        float(val),
-        liberacao
-    ))
+    """, (evt, dt, hi, hf, qtd, val, liberacao))
 
     conn.commit()
     conn.close()
