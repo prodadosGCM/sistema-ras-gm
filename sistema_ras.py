@@ -3,6 +3,8 @@ import sqlite3
 import pandas as pd
 import time
 import hashlib
+from datetime import datetime
+
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Sistema RAS", layout="wide")
@@ -37,7 +39,7 @@ def get_connection():
 def init_db():
     conn = get_connection()
     c = conn.cursor()
-    
+   
     # 1. Tabela Agentes
     c.execute('''CREATE TABLE IF NOT EXISTS agentes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,6 +69,13 @@ def init_db():
                     vagas_totais INTEGER,
                     valor REAL
                 )''')
+    
+    # 🔹 AGORA SIM: tenta adicionar a coluna de liberação
+    try:
+        c.execute("ALTER TABLE vagas_ras ADD COLUMN liberacao TIMESTAMP")
+    except sqlite3.OperationalError:
+        # Coluna já existe
+        pass
     
     # 4. Tabela Inscrições
     c.execute('''CREATE TABLE IF NOT EXISTS inscricoes (
@@ -178,6 +187,16 @@ def criar_vaga(evento, data, h_inicio, h_fim, qtd, valor):
 
 def inscrever_ras(id_agente, id_vaga):
     conn = get_connection()
+
+    # 🔒 Verifica horário de liberação
+    liberacao = conn.execute(
+        "SELECT liberacao FROM vagas_ras WHERE id = ?",
+        (id_vaga,)
+    ).fetchone()[0]
+
+    if liberacao and datetime.now() < pd.to_datetime(liberacao):
+        conn.close()
+        return False, "Inscrição ainda não liberada."
 
     # Verifica se já existe inscrição
     check = conn.execute("""
@@ -423,41 +442,31 @@ else:
         elif op == "Criar Escalas":
             st.subheader("Nova Escala RAS")
             evt = st.text_input("Nome do Evento")
-            c1, c2, c3 = st.columns(3)
-            dt = c1.date_input("Data")
-            hi = c2.time_input("Início")
-            hf = c3.time_input("Fim")
-            c4, c5 = st.columns(2)
-            qtd = c4.number_input("Vagas", 1, 100, 10)
-            val = c5.number_input("Valor (R$)", 0.0, 1000.0, 200.0)
+
+            c1, c2 = st.columns(2)
+            dt = c1.date_input("Data do Evento")
+            hora_liberacao = c2.time_input("Horário de Liberação da Inscrição")
+
+            c3, c4 = st.columns(2)
+            hi = c3.time_input("Início do Serviço")
+            hf = c4.time_input("Fim do Serviço")
+
+            c5, c6 = st.columns(2)
+            qtd = c5.number_input("Vagas", 1, 100, 10)
+            val = c6.number_input("Valor (R$)", 0.0, 1000.0, 200.0)
+
             if st.button("Publicar"):
-                criar_vaga(evt, dt, hi, hf, qtd, val)
-                st.success("Escala Criada!")
-                
-        elif op == "Lista de Inscrições":
-            st.subheader("📋 Inscrições Realizadas")
-            conn = get_connection()
-            try:
-                df = pd.read_sql('''
-                    SELECT v.evento, v.data_inicio, a.nome, a.matricula, i.status 
-                    FROM inscricoes i 
-                    JOIN vagas_ras v ON i.id_vaga = v.id 
-                    JOIN agentes a ON i.id_agente = a.id
-                    ORDER BY v.data_inicio DESC
-                ''', conn)
-            except: df = pd.DataFrame()
-            conn.close()
-            
-            col_f1, col_f2 = st.columns(2)
-            with col_f1: filtro_evento = st.text_input("🔍 Evento")
-            with col_f2: filtro_agente = st.text_input("👮 Agente")
-            
-            if not df.empty:
-                if filtro_evento: df = df[df['evento'].str.contains(filtro_evento, case=False, na=False)]
-                if filtro_agente: df = df[df['nome'].str.contains(filtro_agente, case=False, na=False) | df['matricula'].str.contains(filtro_agente, case=False, na=False)]
-                st.dataframe(df, use_container_width=True)
-            else:
-                st.warning("Nada encontrado.")
+                liberacao = f"{dt} {hora_liberacao}"
+                conn = get_connection()
+                conn.execute("""
+                    INSERT INTO vagas_ras 
+                    (evento, data_inicio, hora_inicio, hora_fim, vagas_totais, valor, liberacao)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (evt, dt, hi, hf, qtd, val, liberacao))
+                conn.commit()
+                conn.close()
+                st.success("Escala criada com horário de liberação!")
+
 
         elif op == "Gerenciar Agentes":
             st.subheader("👮‍♂️ Gestão de Efetivo")
@@ -551,7 +560,9 @@ else:
             conn = get_connection()
             query = '''
             SELECT v.id, v.evento, v.data_inicio, v.hora_inicio, v.hora_fim, v.valor,
-                   v.vagas_totais, COUNT(CASE WHEN i.status = 'ATIVO' THEN 1 END) AS inscritos
+            v.vagas_totais,
+            v.liberacao,
+            COUNT(CASE WHEN i.status = 'ATIVO' THEN 1 END) AS inscritos
             FROM vagas_ras v
             LEFT JOIN inscricoes i ON v.id = i.id_vaga
             GROUP BY v.id
@@ -565,6 +576,12 @@ else:
                 vagas_restantes = row['vagas_totais'] - row['inscritos']
                 pct = row['inscritos'] / row['vagas_totais'] if row['vagas_totais'] > 0 else 0
                 
+                # ⏱ CONTROLE DE LIBERAÇÃO
+                agora = datetime.now()
+                liberacao = pd.to_datetime(row['liberacao'])
+                liberado = agora >= liberacao
+
+
                 with st.container(border=True):
                     c1, c2, c3 = st.columns([3, 2, 1])
                     with c1:
@@ -572,6 +589,12 @@ else:
                         st.write(f"📅 {row['data_inicio']} | 🕒 {row['hora_inicio']} - {row['hora_fim']}")
                         st.write(f"💰 R$ {row['valor']:.2f}")
                     with c2:
+                        if not liberado:
+                            delta = liberacao - agora
+                            horas, resto = divmod(int(delta.total_seconds()), 3600)
+                            minutos, segundos = divmod(resto, 60)
+                            st.info(f"⏱ Liberação em {horas:02d}:{minutos:02d}:{segundos:02d}")
+
                         st.write(f"Ocupação: {row['inscritos']}/{row['vagas_totais']}")
                         st.progress(pct)
                         if vagas_restantes <= 0: st.error("LOTADO")
@@ -587,14 +610,21 @@ else:
                             btn_label = "Entrar na Lista de Espera"
                             btn_help = "Você será chamado caso alguém desista"
 
-                        if st.button(btn_label, key=f"v_{row['id']}", use_container_width=True, help=btn_help):
-                            ok, msg = inscrever_ras(st.session_state['usuario_id'], row['id'])
-                            if ok:
-                                st.success(msg)
-                                time.sleep(1)
-                                st.rerun()
-                            else:
-                                st.error(msg)
+                        if not liberado:
+                            st.button(
+                                "⏳ Aguardando Liberação",
+                                disabled=True,
+                                use_container_width=True
+                            )
+                        else:
+                            if st.button(btn_label, key=f"v_{row['id']}", use_container_width=True, help=btn_help):
+                                ok, msg = inscrever_ras(st.session_state['usuario_id'], row['id'])
+                                if ok:
+                                    st.success(msg)
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error(msg)
 
             conn.close()
             
