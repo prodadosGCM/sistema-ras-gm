@@ -580,16 +580,22 @@ else:
                     with c3:
                         st.write("")
                         st.write("")
-                        if vagas_restantes > 0:
-                            if st.button("Inscrever", key=f"v_{row['id']}", use_container_width=True):
-                                ok, msg = inscrever_ras(st.session_state['usuario_id'], row['id'])
-                                if ok: 
-                                    st.toast("Sucesso!")
-                                    time.sleep(1)
-                                    st.rerun()
-                                else: st.error(msg)
-                        else:
-                            st.button("Lotado", disabled=True, key=f"off_{row['id']}")
+                        btn_label = "Inscrever"
+                        btn_help = None
+
+                        if vagas_restantes <= 0:
+                            btn_label = "Entrar na Lista de Espera"
+                            btn_help = "Você será chamado caso alguém desista"
+
+                        if st.button(btn_label, key=f"v_{row['id']}", use_container_width=True, help=btn_help):
+                            ok, msg = inscrever_ras(st.session_state['usuario_id'], row['id'])
+                            if ok:
+                                st.success(msg)
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error(msg)
+
             conn.close()
             
         with tab_minhas:
