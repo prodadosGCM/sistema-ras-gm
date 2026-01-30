@@ -5,7 +5,7 @@ import time
 import hashlib
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Sistema S.G.R.A.S", layout="wide")
+st.set_page_config(page_title="Sistema RAS", layout="wide")
 
 # --- FUNÇÕES DE SEGURANÇA (HASH) ---
 def make_hashes(password):
@@ -178,22 +178,44 @@ def criar_vaga(evento, data, h_inicio, h_fim, qtd, valor):
 
 def inscrever_ras(id_agente, id_vaga):
     conn = get_connection()
-    check = conn.execute("SELECT * FROM inscricoes WHERE id_agente = ? AND id_vaga = ?", (id_agente, id_vaga)).fetchone()
-    if check: 
-        conn.close()
-        return False, "Você já está inscrito (ou com pedido pendente)."
-    
-    vaga = conn.execute("SELECT vagas_totais FROM vagas_ras WHERE id = ?", (id_vaga,)).fetchone()
-    inscritos = conn.execute("SELECT count(*) FROM inscricoes WHERE id_vaga = ?", (id_vaga,)).fetchone()[0]
-    
-    if inscritos >= vaga[0]: 
-        conn.close()
-        return False, "Vagas esgotadas."
 
-    conn.execute("INSERT INTO inscricoes (id_vaga, id_agente, status) VALUES (?, ?, 'ATIVO')", (id_vaga, id_agente))
+    # Verifica se já existe inscrição
+    check = conn.execute("""
+        SELECT status FROM inscricoes 
+        WHERE id_agente = ? AND id_vaga = ?
+    """, (id_agente, id_vaga)).fetchone()
+
+    if check:
+        conn.close()
+        return False, "Você já está inscrito nesta escala."
+
+    vagas_totais = conn.execute(
+        "SELECT vagas_totais FROM vagas_ras WHERE id = ?", 
+        (id_vaga,)
+    ).fetchone()[0]
+
+    ativos = conn.execute("""
+        SELECT COUNT(*) FROM inscricoes 
+        WHERE id_vaga = ? AND status = 'ATIVO'
+    """, (id_vaga,)).fetchone()[0]
+
+    if ativos < vagas_totais:
+        status = 'ATIVO'
+        msg = "Inscrição confirmada!"
+    else:
+        status = 'ESPERA'
+        msg = "Vagas esgotadas. Você entrou na lista de espera."
+
+    conn.execute("""
+        INSERT INTO inscricoes (id_vaga, id_agente, status)
+        VALUES (?, ?, ?)
+    """, (id_vaga, id_agente, status))
+
     conn.commit()
     conn.close()
-    return True, "Inscrição realizada!"
+
+    return True, msg
+
 
 def solicitar_desistencia(id_inscricao):
     conn = get_connection()
@@ -209,12 +231,41 @@ def cancelar_desistencia(id_inscricao):
 
 def admin_processar_desistencia(id_inscricao, aprovado):
     conn = get_connection()
+
+    # Descobre qual vaga foi liberada
+    vaga_id = conn.execute(
+        "SELECT id_vaga FROM inscricoes WHERE id = ?", 
+        (id_inscricao,)
+    ).fetchone()[0]
+
     if aprovado:
         conn.execute("DELETE FROM inscricoes WHERE id = ?", (id_inscricao,))
+
+        # Puxa o primeiro da lista de espera
+        espera = conn.execute("""
+            SELECT id FROM inscricoes
+            WHERE id_vaga = ? AND status = 'ESPERA'
+            ORDER BY data_inscricao ASC
+            LIMIT 1
+        """, (vaga_id,)).fetchone()
+
+        if espera:
+            conn.execute("""
+                UPDATE inscricoes 
+                SET status = 'ATIVO'
+                WHERE id = ?
+            """, (espera[0],))
+
     else:
-        conn.execute("UPDATE inscricoes SET status = 'ATIVO' WHERE id = ?", (id_inscricao,))
+        conn.execute("""
+            UPDATE inscricoes 
+            SET status = 'ATIVO'
+            WHERE id = ?
+        """, (id_inscricao,))
+
     conn.commit()
     conn.close()
+
 
 # ================= TELA DE LOGIN / CADASTRO =================
 if not st.session_state['logado']:
@@ -500,7 +551,7 @@ else:
             conn = get_connection()
             query = '''
             SELECT v.id, v.evento, v.data_inicio, v.hora_inicio, v.hora_fim, v.valor,
-                   v.vagas_totais, COUNT(i.id) as inscritos
+                   v.vagas_totais, COUNT(CASE WHEN i.status = 'ATIVO' THEN 1 END) AS inscritos
             FROM vagas_ras v
             LEFT JOIN inscricoes i ON v.id = i.id_vaga
             GROUP BY v.id
@@ -572,9 +623,14 @@ else:
                             if col_b.button("Solicitar Desistência", key=f"sair_{row['id_inscricao']}"):
                                 solicitar_desistencia(row['id_inscricao'])
                                 st.rerun()
+
+                        elif status_atual == 'ESPERA':
+                            col_a.info("🕒 Lista de Espera")        
                         
                         elif status_atual == 'PENDENTE_SAIDA':
                             col_a.warning("⏳ Aguardando Aprovação do Comando para sair")
                             if col_b.button("Cancelar Pedido", key=f"canc_sair_{row['id_inscricao']}"):
                                 cancelar_desistencia(row['id_inscricao'])
                                 st.rerun()
+                        
+                        
